@@ -73,33 +73,19 @@ def run_profitability(df, coverage):
 
     # Pool logic
     if coverage == "PAR":
-        df["Pool_amt"] = np.minimum(
-            0.025 * df["S_Askrindo"],
-            500_000_000 * df["% Askrindo Share"]
-        )
+        df["Pool_amt"] = np.minimum(0.025 * df["S_Askrindo"], 500_000_000 * df["% Askrindo Share"])
         komisi_pool = KOMISI_BPPDAN
 
     elif coverage == "EQVET":
-        rate = np.where(
-            df["Wilayah Gempa Prioritas"] == "DKI-JABAR-BANTEN",
-            0.10,
-            0.25
-        )
-        df["Pool_amt"] = np.minimum(
-            rate * df["S_Askrindo"],
-            10_000_000_000 * df["% Askrindo Share"]
-        )
+        rate = np.where(df["Wilayah Gempa Prioritas"] == "DKI-JABAR-BANTEN", 0.10, 0.25)
+        df["Pool_amt"] = np.minimum(rate * df["S_Askrindo"], 10_000_000_000 * df["% Askrindo Share"])
         komisi_pool = KOMISI_MAIPARK
 
     else:
         df["Pool_amt"] = 0
         komisi_pool = 0
 
-    df["%POOL"] = np.where(
-        df["ExposureBasis"] > 0,
-        df["Pool_amt"] / df["ExposureBasis"],
-        0
-    )
+    df["%POOL"] = np.where(df["ExposureBasis"] > 0, df["Pool_amt"] / df["ExposureBasis"], 0)
 
     # Facultative & OR
     df["Fac_amt"] = df["% Fakultatif Share"] * df["ExposureBasis"]
@@ -120,11 +106,7 @@ def run_profitability(df, coverage):
 
     # Expected loss
     if coverage == "MACHINERY":
-        rate_acuan = np.where(
-            df["Occupancy"].str.lower() == "industrial",
-            RATE_MB_INDUSTRIAL,
-            RATE_MB_NON_INDUSTRIAL
-        )
+        rate_acuan = np.where(df["Occupancy"].str.lower() == "industrial", RATE_MB_INDUSTRIAL, RATE_MB_NON_INDUSTRIAL)
         df["EL_100"] = rate_acuan * df["Exposure_Loss"] * loss_ratio
 
     elif coverage == "PUBLIC LIABILITY":
@@ -159,11 +141,7 @@ def run_profitability(df, coverage):
         - df["Expense"]
     )
 
-    df["%Result"] = np.where(
-        df["Prem_Askrindo"] != 0,
-        df["Result"] / df["Prem_Askrindo"],
-        0
-    )
+    df["%Result"] = np.where(df["Prem_Askrindo"] != 0, df["Result"] / df["Prem_Askrindo"], 0)
 
     return df
 
@@ -183,8 +161,7 @@ if process_btn:
         if cov not in xls.sheet_names:
             st.error(f"Sheet {cov} tidak ditemukan di Excel.")
             st.stop()
-        df = pd.read_excel(xls, sheet_name=cov)
-        results[cov] = run_profitability(df, cov)
+        results[cov] = run_profitability(pd.read_excel(xls, sheet_name=cov), cov)
 
     # ========================= SUMMARY =========================
     summary_rows = []
@@ -201,14 +178,9 @@ if process_btn:
 
         summary_rows.append([cov, prem, res, pct])
 
-    summary_rows.append(
-        ["JUMLAH", total_prem, total_res, total_res / total_prem if total_prem != 0 else 0]
-    )
+    summary_rows.append(["JUMLAH", total_prem, total_res, total_res / total_prem if total_prem != 0 else 0])
 
-    summary_df = pd.DataFrame(
-        summary_rows,
-        columns=["Coverage", "Jumlah Premi Ourshare", "Result", "%Result"]
-    )
+    summary_df = pd.DataFrame(summary_rows, columns=["Coverage", "Jumlah Premi Ourshare", "Result", "%Result"])
 
     st.subheader("📊 Summary Profitability")
     st.dataframe(
@@ -227,8 +199,7 @@ if process_btn:
         total_row = pd.DataFrame([{
             "Prem_Askrindo": df["Prem_Askrindo"].sum(),
             "Result": df["Result"].sum(),
-            "%Result": df["Result"].sum() / df["Prem_Askrindo"].sum()
-            if df["Prem_Askrindo"].sum() != 0 else 0
+            "%Result": df["Result"].sum() / df["Prem_Askrindo"].sum() if df["Prem_Askrindo"].sum() != 0 else 0
         }], index=["JUMLAH"])
 
         display_df = pd.concat([df, total_row], axis=0)
@@ -236,7 +207,21 @@ if process_btn:
         st.subheader(f"📋 Detail {cov}")
         st.dataframe(
             display_df.style.format({
-                "%Result": "{:.2%}"
+                "%Result": "{:.2%}",
+                "Prem_Askrindo": "{:,.0f}",
+                "Prem_POOL": "{:,.0f}",
+                "Prem_Fac": "{:,.0f}",
+                "Prem_OR": "{:,.0f}",
+                "Acq_amt": "{:,.0f}",
+                "Komisi_POOL": "{:,.0f}",
+                "Komisi_Fakultatif": "{:,.0f}",
+                "EL_100": "{:,.0f}",
+                "EL_Askrindo": "{:,.0f}",
+                "EL_POOL": "{:,.0f}",
+                "EL_Fac": "{:,.0f}",
+                "XL_cost": "{:,.0f}",
+                "Expense": "{:,.0f}",
+                "Result": "{:,.0f}"
             }),
             use_container_width=True
         )
