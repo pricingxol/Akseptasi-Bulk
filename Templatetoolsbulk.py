@@ -45,11 +45,14 @@ COVERAGE_ORDER = [
 # =====================================================
 # DISPLAY CONFIG
 # =====================================================
-AMOUNT_COLS = [
+ORIGINAL_CCY_COLS = [
     "Kurs",
     "TSI Full Value original currency",
     "Limit of Liability original currency",
-    "Top Risk original currency",
+    "Top Risk original currency"
+]
+
+AMOUNT_COLS = [
     "TSI_IDR", "Limit_IDR", "TopRisk_IDR",
     "ExposureBasis", "Exposure_Loss",
     "S_Askrindo", "Pool_amt", "Fac_amt", "OR_amt",
@@ -83,11 +86,11 @@ uploaded_file = st.file_uploader(
 process_btn = st.button("🚀 Proses Profitability")
 
 # =====================================================
-# DISPLAY FORMATTER (STREAMLIT)
+# STREAMLIT FORMATTER
 # =====================================================
 def format_display(df):
     fmt = {}
-    for c in AMOUNT_COLS:
+    for c in AMOUNT_COLS + ORIGINAL_CCY_COLS:
         if c in df.columns:
             fmt[c] = "{:,.0f}"
     for c in PERCENT_COLS:
@@ -191,6 +194,7 @@ def add_total_row(df):
             total[col] = np.nan
     return pd.concat([df, pd.DataFrame([total], index=["JUMLAH"])])
 
+
 def write_formatted_sheet(writer, df, sheet_name):
     wb = writer.book
     ws = wb.add_worksheet(sheet_name)
@@ -202,12 +206,14 @@ def write_formatted_sheet(writer, df, sheet_name):
     fmt_amt = wb.add_format({"num_format": "#,##0"})
     fmt_pct = wb.add_format({"num_format": "0.00%"})
     fmt_int = wb.add_format({"num_format": "0"})
+    fmt_bold = wb.add_format({"bold": True})
+
     fmt_red = wb.add_format({"bg_color": "#F8CBAD", "num_format": "0.00%"})
     fmt_green = wb.add_format({"bg_color": "#C6EFCE", "num_format": "0.00%"})
 
     for c, col in enumerate(df.columns):
         ws.write(0, c, col, fmt_header)
-        if col in AMOUNT_COLS:
+        if col in AMOUNT_COLS + ORIGINAL_CCY_COLS:
             ws.set_column(c, c, 18, fmt_amt)
         elif col in PERCENT_COLS:
             ws.set_column(c, c, 14, fmt_pct)
@@ -216,14 +222,17 @@ def write_formatted_sheet(writer, df, sheet_name):
         else:
             ws.set_column(c, c, 20)
 
-    ws.freeze_panes(1, 0)
+    # Bold JUMLAH row
+    jumlah_row = len(df)
+    ws.set_row(jumlah_row, None, fmt_bold)
 
+    # Conditional formatting %Result
     if "%Result" in df.columns:
         idx = df.columns.get_loc("%Result")
-        ws.conditional_format(1, idx, len(df), idx, {
+        ws.conditional_format(1, idx, jumlah_row, idx, {
             "type": "cell", "criteria": "<", "value": 0.05, "format": fmt_red
         })
-        ws.conditional_format(1, idx, len(df), idx, {
+        ws.conditional_format(1, idx, jumlah_row, idx, {
             "type": "cell", "criteria": ">=", "value": 0.05, "format": fmt_green
         })
 
