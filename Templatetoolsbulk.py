@@ -43,7 +43,7 @@ COVERAGE_ORDER = [
 ]
 
 # =====================================================
-# DISPLAY CONFIG
+# COLUMN GROUPS
 # =====================================================
 ORIGINAL_CCY_COLS = [
     "Kurs",
@@ -86,7 +86,7 @@ uploaded_file = st.file_uploader(
 process_btn = st.button("🚀 Proses Profitability")
 
 # =====================================================
-# STREAMLIT FORMATTER
+# STREAMLIT DISPLAY FORMAT
 # =====================================================
 def format_display(df):
     fmt = {}
@@ -181,7 +181,7 @@ def run_profitability(df, coverage):
     return df
 
 # =====================================================
-# EXCEL HELPERS
+# TOTAL ROW
 # =====================================================
 def add_total_row(df):
     total = {}
@@ -194,13 +194,15 @@ def add_total_row(df):
             total[col] = np.nan
     return pd.concat([df, pd.DataFrame([total], index=["JUMLAH"])])
 
-
+# =====================================================
+# EXCEL WRITER
+# =====================================================
 def write_formatted_sheet(writer, df, sheet_name):
     wb = writer.book
     ws = wb.add_worksheet(sheet_name)
     writer.sheets[sheet_name] = ws
 
-    df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=1)
+    df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=1, header=False)
 
     fmt_header = wb.add_format({"bold": True, "align": "center", "border": 1})
     fmt_amt = wb.add_format({"num_format": "#,##0"})
@@ -222,19 +224,15 @@ def write_formatted_sheet(writer, df, sheet_name):
         else:
             ws.set_column(c, c, 20)
 
-    # Bold JUMLAH row
     jumlah_row = len(df)
     ws.set_row(jumlah_row, None, fmt_bold)
 
-    # Conditional formatting %Result
     if "%Result" in df.columns:
         idx = df.columns.get_loc("%Result")
-        ws.conditional_format(1, idx, jumlah_row, idx, {
-            "type": "cell", "criteria": "<", "value": 0.05, "format": fmt_red
-        })
-        ws.conditional_format(1, idx, jumlah_row, idx, {
-            "type": "cell", "criteria": ">=", "value": 0.05, "format": fmt_green
-        })
+        ws.conditional_format(1, idx, jumlah_row, idx,
+                              {"type": "cell", "criteria": "<", "value": 0.05, "format": fmt_red})
+        ws.conditional_format(1, idx, jumlah_row, idx,
+                              {"type": "cell", "criteria": ">=", "value": 0.05, "format": fmt_green})
 
 # =====================================================
 # RUN
@@ -258,9 +256,8 @@ if process_btn and uploaded_file:
     st.dataframe(format_display(summary_df), use_container_width=True)
 
     for c in COVERAGE_ORDER:
-        dfc = add_total_row(results[c])
         st.subheader(f"📋 Detail {c}")
-        st.dataframe(format_display(dfc), use_container_width=True)
+        st.dataframe(format_display(add_total_row(results[c])), use_container_width=True)
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
