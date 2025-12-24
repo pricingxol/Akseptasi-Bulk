@@ -43,7 +43,7 @@ COVERAGE_ORDER = [
 ]
 
 # =====================================================
-# COLUMN GROUPS
+# COLUMN RULES
 # =====================================================
 NON_SUM_COVERAGE_COLS = [
     "Kode Okupasi",
@@ -115,12 +115,24 @@ def run_profitability(df, coverage):
     df["S_Askrindo"] = df["% Askrindo Share"] * df["ExposureBasis"]
 
     if coverage == "PAR":
-        df["Pool_amt"] = np.minimum(0.025 * df["S_Askrindo"], 500_000_000 * df["% Askrindo Share"])
+        df["Pool_amt"] = np.minimum(
+            0.025 * df["S_Askrindo"],
+            500_000_000 * df["% Askrindo Share"]
+        )
         komisi_pool = KOMISI_BPPDAN
+
     elif coverage == "EQVET":
-        rate = np.where(df["Wilayah Gempa Prioritas"] == "DKI-JABAR-BANTEN", 0.10, 0.25)
-        df["Pool_amt"] = np.minimum(rate * df["S_Askrindo"], 10_000_000_000 * df["% Askrindo Share"])
+        rate = np.where(
+            df["Wilayah Gempa Prioritas"] == "DKI-JABAR-BANTEN",
+            0.10,
+            0.25
+        )
+        df["Pool_amt"] = np.minimum(
+            rate * df["S_Askrindo"],
+            10_000_000_000 * df["% Askrindo Share"]
+        )
         komisi_pool = KOMISI_MAIPARK
+
     else:
         df["Pool_amt"] = 0
         komisi_pool = 0
@@ -129,7 +141,7 @@ def run_profitability(df, coverage):
 
     df["Fac_amt"] = df["% Fakultatif Share"] * df["ExposureBasis"]
     df["OR_amt"] = df["S_Askrindo"] - df["Pool_amt"] - df["Fac_amt"]
-    df["%OR"] = df["OR_amt"] / df["ExposureBasis"]
+    df["%OR"] = np.where(df["ExposureBasis"] > 0, df["OR_amt"] / df["ExposureBasis"], 0)
 
     df["Prem100"] = df["Rate"] * df["% LOL Premi"] * df["TSI_IDR"]
     df["Prem_Askrindo"] = df["Prem100"] * df["% Askrindo Share"]
@@ -148,10 +160,13 @@ def run_profitability(df, coverage):
             RATE_MB_NON_INDUSTRIAL
         )
         df["EL_100"] = rate_acuan * df["Exposure_Loss"] * loss_ratio
+
     elif coverage == "PUBLIC LIABILITY":
         df["EL_100"] = RATE_PL * df["Exposure_Loss"] * loss_ratio
+
     elif coverage == "FIDELITY GUARANTEE":
         df["EL_100"] = RATE_FG * df["Exposure_Loss"] * loss_ratio
+
     else:
         df["EL_100"] = loss_ratio * df["Prem100"]
 
@@ -176,7 +191,11 @@ def run_profitability(df, coverage):
         - df["Expense"]
     )
 
-    df["%Result"] = np.where(df["Prem_Askrindo"] != 0, df["Result"] / df["Prem_Askrindo"], 0)
+    df["%Result"] = np.where(
+        df["Prem_Askrindo"] != 0,
+        df["Result"] / df["Prem_Askrindo"],
+        0
+    )
 
     return df
 
@@ -184,14 +203,18 @@ def run_profitability(df, coverage):
 # TOTAL ROW HANDLER
 # =====================================================
 def add_total_row(df, is_summary=False):
+
     total = {}
 
+    denom_col = "Jumlah Premi Ourshare" if is_summary else "Prem_Askrindo"
+
     for col in df.columns:
+
         if col == "%Result":
-            total[col] = (
-                df["Result"].sum() / df["Prem_Askrindo"].sum()
-                if df["Prem_Askrindo"].sum() != 0 else 0
-            )
+            if denom_col in df.columns and df[denom_col].sum() != 0:
+                total[col] = df["Result"].sum() / df[denom_col].sum()
+            else:
+                total[col] = 0
 
         elif is_summary:
             if pd.api.types.is_numeric_dtype(df[col]):
@@ -199,7 +222,7 @@ def add_total_row(df, is_summary=False):
             else:
                 total[col] = np.nan
 
-        else:  # coverage sheet
+        else:
             if col in NON_SUM_COVERAGE_COLS:
                 total[col] = np.nan
             elif pd.api.types.is_numeric_dtype(df[col]):
@@ -213,6 +236,7 @@ def add_total_row(df, is_summary=False):
 # EXCEL WRITER
 # =====================================================
 def write_formatted_sheet(writer, df, sheet_name):
+
     wb = writer.book
     ws = wb.add_worksheet(sheet_name)
     writer.sheets[sheet_name] = ws
@@ -233,6 +257,7 @@ def write_formatted_sheet(writer, df, sheet_name):
 
     for c, col in enumerate(df.columns):
         ws.write(0, c, col, fmt_header)
+
         if col in PERCENT_COLS:
             ws.set_column(c, c, 14, fmt_pct)
         elif col in INT_COLS:
@@ -247,10 +272,13 @@ def write_formatted_sheet(writer, df, sheet_name):
 
         if pd.isna(val):
             ws.write_blank(jumlah_row, c, None, fmt_txt_bold)
+
         elif col in PERCENT_COLS:
             ws.write_number(jumlah_row, c, float(val), fmt_pct_bold)
+
         elif isinstance(val, (int, float, np.integer, np.floating)):
             ws.write_number(jumlah_row, c, float(val), fmt_amt_bold)
+
         else:
             ws.write(jumlah_row, c, val, fmt_txt_bold)
 
@@ -271,9 +299,12 @@ def write_formatted_sheet(writer, df, sheet_name):
 if process_btn and uploaded_file:
 
     xls = pd.ExcelFile(uploaded_file)
-    results = {c: run_profitability(pd.read_excel(xls, c), c) for c in COVERAGE_ORDER}
+    results = {
+        c: run_profitability(pd.read_excel(xls, c), c)
+        for c in COVERAGE_ORDER
+    }
 
-    # Summary
+    # SUMMARY DATAFRAME
     rows, tp, tr = [], 0, 0
     for c in COVERAGE_ORDER:
         p = results[c]["Prem_Askrindo"].sum()
@@ -283,7 +314,10 @@ if process_btn and uploaded_file:
         tr += r
 
     rows.append(["JUMLAH", tp, tr, tr / tp if tp else 0])
-    summary_df = pd.DataFrame(rows, columns=["Coverage", "Jumlah Premi Ourshare", "Result", "%Result"])
+    summary_df = pd.DataFrame(
+        rows,
+        columns=["Coverage", "Jumlah Premi Ourshare", "Result", "%Result"]
+    )
 
     st.subheader("📊 Summary Profitability")
     st.dataframe(format_display(summary_df), use_container_width=True)
@@ -294,9 +328,17 @@ if process_btn and uploaded_file:
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        write_formatted_sheet(writer, add_total_row(summary_df, is_summary=True), "SUMMARY")
+        write_formatted_sheet(
+            writer,
+            add_total_row(summary_df, is_summary=True),
+            "SUMMARY"
+        )
         for c in COVERAGE_ORDER:
-            write_formatted_sheet(writer, add_total_row(results[c]), c)
+            write_formatted_sheet(
+                writer,
+                add_total_row(results[c]),
+                c
+            )
 
     st.download_button(
         "📥 Download Excel Output",
