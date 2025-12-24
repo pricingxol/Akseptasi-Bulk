@@ -43,7 +43,7 @@ COVERAGE_ORDER = [
 ]
 
 # =====================================================
-# DISPLAY CONFIG (STREAMLIT)
+# DISPLAY CONFIG
 # =====================================================
 AMOUNT_COLS = [
     "Kurs",
@@ -188,9 +188,8 @@ def add_total_row(df):
         elif col == "%Result":
             total[col] = df["Result"].sum() / df["Prem_Askrindo"].sum() if df["Prem_Askrindo"].sum() != 0 else 0
         else:
-            total[col] = ""
+            total[col] = np.nan
     return pd.concat([df, pd.DataFrame([total], index=["JUMLAH"])])
-
 
 def write_formatted_sheet(writer, df, sheet_name):
     wb = writer.book
@@ -203,7 +202,6 @@ def write_formatted_sheet(writer, df, sheet_name):
     fmt_amt = wb.add_format({"num_format": "#,##0"})
     fmt_pct = wb.add_format({"num_format": "0.00%"})
     fmt_int = wb.add_format({"num_format": "0"})
-
     fmt_red = wb.add_format({"bg_color": "#F8CBAD", "num_format": "0.00%"})
     fmt_green = wb.add_format({"bg_color": "#C6EFCE", "num_format": "0.00%"})
 
@@ -221,32 +219,31 @@ def write_formatted_sheet(writer, df, sheet_name):
     ws.freeze_panes(1, 0)
 
     if "%Result" in df.columns:
-        col = df.columns.get_loc("%Result")
-        ws.conditional_format(1, col, len(df), col, {
+        idx = df.columns.get_loc("%Result")
+        ws.conditional_format(1, idx, len(df), idx, {
             "type": "cell", "criteria": "<", "value": 0.05, "format": fmt_red
         })
-        ws.conditional_format(1, col, len(df), col, {
+        ws.conditional_format(1, idx, len(df), idx, {
             "type": "cell", "criteria": ">=", "value": 0.05, "format": fmt_green
         })
 
 # =====================================================
 # RUN
 # =====================================================
-if process_btn:
+if process_btn and uploaded_file:
 
     xls = pd.ExcelFile(uploaded_file)
     results = {c: run_profitability(pd.read_excel(xls, c), c) for c in COVERAGE_ORDER}
 
-    summary_rows = []
-    tp = tr = 0
+    rows, tp, tr = [], 0, 0
     for c in COVERAGE_ORDER:
         p = results[c]["Prem_Askrindo"].sum()
         r = results[c]["Result"].sum()
-        summary_rows.append([c, p, r, r / p if p else 0])
+        rows.append([c, p, r, r / p if p else 0])
         tp += p; tr += r
 
-    summary_rows.append(["JUMLAH", tp, tr, tr / tp if tp else 0])
-    summary_df = pd.DataFrame(summary_rows, columns=["Coverage", "Jumlah Premi Ourshare", "Result", "%Result"])
+    rows.append(["JUMLAH", tp, tr, tr / tp if tp else 0])
+    summary_df = pd.DataFrame(rows, columns=["Coverage", "Jumlah Premi Ourshare", "Result", "%Result"])
 
     st.subheader("📊 Summary Profitability")
     st.dataframe(format_display(summary_df), use_container_width=True)
