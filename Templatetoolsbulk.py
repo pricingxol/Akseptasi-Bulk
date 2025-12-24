@@ -52,16 +52,6 @@ ORIGINAL_CCY_COLS = [
     "Top Risk original currency"
 ]
 
-AMOUNT_COLS = [
-    "TSI_IDR", "Limit_IDR", "TopRisk_IDR",
-    "ExposureBasis", "Exposure_Loss",
-    "S_Askrindo", "Pool_amt", "Fac_amt", "OR_amt",
-    "Prem100", "Prem_Askrindo", "Prem_POOL", "Prem_Fac", "Prem_OR",
-    "Acq_amt", "Komisi_POOL", "Komisi_Fakultatif",
-    "EL_100", "EL_Askrindo", "EL_POOL", "EL_Fac",
-    "XL_cost", "Expense", "Result"
-]
-
 PERCENT_COLS = [
     "Rate",
     "% Askrindo Share",
@@ -90,15 +80,13 @@ process_btn = st.button("🚀 Proses Profitability")
 # =====================================================
 def format_display(df):
     fmt = {}
-    for c in AMOUNT_COLS + ORIGINAL_CCY_COLS:
-        if c in df.columns:
-            fmt[c] = "{:,.0f}"
-    for c in PERCENT_COLS:
-        if c in df.columns:
-            fmt[c] = "{:.2%}"
-    for c in INT_COLS:
-        if c in df.columns:
-            fmt[c] = "{:.0f}"
+    for col in df.columns:
+        if col in PERCENT_COLS:
+            fmt[col] = "{:.2%}"
+        elif col in INT_COLS:
+            fmt[col] = "{:.0f}"
+        elif pd.api.types.is_numeric_dtype(df[col]):
+            fmt[col] = "{:,.0f}"
     return df.style.format(fmt)
 
 # =====================================================
@@ -146,7 +134,11 @@ def run_profitability(df, coverage):
     df["Komisi_Fakultatif"] = df["% Komisi Fakultatif"].fillna(0) * df["Prem_Fac"]
 
     if coverage == "MACHINERY":
-        rate_acuan = np.where(df["Occupancy"].str.lower() == "industrial", RATE_MB_INDUSTRIAL, RATE_MB_NON_INDUSTRIAL)
+        rate_acuan = np.where(
+            df["Occupancy"].str.lower() == "industrial",
+            RATE_MB_INDUSTRIAL,
+            RATE_MB_NON_INDUSTRIAL
+        )
         df["EL_100"] = rate_acuan * df["Exposure_Loss"] * loss_ratio
     elif coverage == "PUBLIC LIABILITY":
         df["EL_100"] = RATE_PL * df["Exposure_Loss"] * loss_ratio
@@ -186,10 +178,13 @@ def run_profitability(df, coverage):
 def add_total_row(df):
     total = {}
     for col in df.columns:
-        if col in AMOUNT_COLS:
+        if col == "%Result":
+            total[col] = (
+                df["Result"].sum() / df["Prem_Askrindo"].sum()
+                if df["Prem_Askrindo"].sum() != 0 else 0
+            )
+        elif pd.api.types.is_numeric_dtype(df[col]):
             total[col] = df[col].sum()
-        elif col == "%Result":
-            total[col] = df["Result"].sum() / df["Prem_Askrindo"].sum() if df["Prem_Askrindo"].sum() != 0 else 0
         else:
             total[col] = np.nan
     return pd.concat([df, pd.DataFrame([total], index=["JUMLAH"])])
@@ -202,37 +197,58 @@ def write_formatted_sheet(writer, df, sheet_name):
     ws = wb.add_worksheet(sheet_name)
     writer.sheets[sheet_name] = ws
 
+    # Write data without header
     df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=1, header=False)
 
+    # Formats
     fmt_header = wb.add_format({"bold": True, "align": "center", "border": 1})
     fmt_amt = wb.add_format({"num_format": "#,##0"})
     fmt_pct = wb.add_format({"num_format": "0.00%"})
     fmt_int = wb.add_format({"num_format": "0"})
-    fmt_bold = wb.add_format({"bold": True})
+
+    fmt_amt_bold = wb.add_format({"num_format": "#,##0", "bold": True})
+    fmt_pct_bold = wb.add_format({"num_format": "0.00%", "bold": True})
+    fmt_txt_bold = wb.add_format({"bold": True})
 
     fmt_red = wb.add_format({"bg_color": "#F8CBAD", "num_format": "0.00%"})
     fmt_green = wb.add_format({"bg_color": "#C6EFCE", "num_format": "0.00%"})
 
+    # Header
     for c, col in enumerate(df.columns):
         ws.write(0, c, col, fmt_header)
-        if col in AMOUNT_COLS + ORIGINAL_CCY_COLS:
-            ws.set_column(c, c, 18, fmt_amt)
-        elif col in PERCENT_COLS:
+        if col in PERCENT_COLS:
             ws.set_column(c, c, 14, fmt_pct)
         elif col in INT_COLS:
             ws.set_column(c, c, 12, fmt_int)
         else:
-            ws.set_column(c, c, 20)
+            ws.set_column(c, c, 18, fmt_amt)
 
+    # Rewrite JUMLAH row with proper formatting
     jumlah_row = len(df)
-    ws.set_row(jumlah_row, None, fmt_bold)
 
+    for c, col in enumerate(df.columns):
+        val = df.iloc[-1, c]
+
+        if pd.isna(val):
+            ws.write_blank(jumlah_row, c, None, fmt_txt_bold)
+        elif col in PERCENT_COLS:
+            ws.write_number(jumlah_row, c, float(val), fmt_pct_bold)
+        elif isinstance(val, (int, float, np.integer, np.floating)):
+            ws.write_number(jumlah_row, c, float(val), fmt_amt_bold)
+        else:
+            ws.write(jumlah_row, c, val, fmt_txt_bold)
+
+    # Conditional formatting for %Result (ALL rows)
     if "%Result" in df.columns:
         idx = df.columns.get_loc("%Result")
-        ws.conditional_format(1, idx, jumlah_row, idx,
-                              {"type": "cell", "criteria": "<", "value": 0.05, "format": fmt_red})
-        ws.conditional_format(1, idx, jumlah_row, idx,
-                              {"type": "cell", "criteria": ">=", "value": 0.05, "format": fmt_green})
+        ws.conditional_format(
+            1, idx, jumlah_row, idx,
+            {"type": "cell", "criteria": "<", "value": 0.05, "format": fmt_red}
+        )
+        ws.conditional_format(
+            1, idx, jumlah_row, idx,
+            {"type": "cell", "criteria": ">=", "value": 0.05, "format": fmt_green}
+        )
 
 # =====================================================
 # RUN
@@ -242,12 +258,14 @@ if process_btn and uploaded_file:
     xls = pd.ExcelFile(uploaded_file)
     results = {c: run_profitability(pd.read_excel(xls, c), c) for c in COVERAGE_ORDER}
 
+    # Summary
     rows, tp, tr = [], 0, 0
     for c in COVERAGE_ORDER:
         p = results[c]["Prem_Askrindo"].sum()
         r = results[c]["Result"].sum()
         rows.append([c, p, r, r / p if p else 0])
-        tp += p; tr += r
+        tp += p
+        tr += r
 
     rows.append(["JUMLAH", tp, tr, tr / tp if tp else 0])
     summary_df = pd.DataFrame(rows, columns=["Coverage", "Jumlah Premi Ourshare", "Result", "%Result"])
@@ -259,6 +277,7 @@ if process_btn and uploaded_file:
         st.subheader(f"📋 Detail {c}")
         st.dataframe(format_display(add_total_row(results[c])), use_container_width=True)
 
+    # Export Excel
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         write_formatted_sheet(writer, summary_df, "SUMMARY")
