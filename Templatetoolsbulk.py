@@ -45,11 +45,19 @@ COVERAGE_ORDER = [
 # =====================================================
 # COLUMN GROUPS
 # =====================================================
-ORIGINAL_CCY_COLS = [
+NON_SUM_COVERAGE_COLS = [
+    "Kode Okupasi",
     "Kurs",
     "TSI Full Value original currency",
     "Limit of Liability original currency",
-    "Top Risk original currency"
+    "Top Risk original currency",
+    "Rate",
+    "% Askrindo Share",
+    "% Fakultatif Share",
+    "% Komisi Fakultatif",
+    "% LOL Premi",
+    "%POOL",
+    "%OR"
 ]
 
 PERCENT_COLS = [
@@ -173,20 +181,32 @@ def run_profitability(df, coverage):
     return df
 
 # =====================================================
-# TOTAL ROW
+# TOTAL ROW HANDLER
 # =====================================================
-def add_total_row(df):
+def add_total_row(df, is_summary=False):
     total = {}
+
     for col in df.columns:
         if col == "%Result":
             total[col] = (
                 df["Result"].sum() / df["Prem_Askrindo"].sum()
                 if df["Prem_Askrindo"].sum() != 0 else 0
             )
-        elif pd.api.types.is_numeric_dtype(df[col]):
-            total[col] = df[col].sum()
-        else:
-            total[col] = np.nan
+
+        elif is_summary:
+            if pd.api.types.is_numeric_dtype(df[col]):
+                total[col] = df[col].sum()
+            else:
+                total[col] = np.nan
+
+        else:  # coverage sheet
+            if col in NON_SUM_COVERAGE_COLS:
+                total[col] = np.nan
+            elif pd.api.types.is_numeric_dtype(df[col]):
+                total[col] = df[col].sum()
+            else:
+                total[col] = np.nan
+
     return pd.concat([df, pd.DataFrame([total], index=["JUMLAH"])])
 
 # =====================================================
@@ -197,10 +217,8 @@ def write_formatted_sheet(writer, df, sheet_name):
     ws = wb.add_worksheet(sheet_name)
     writer.sheets[sheet_name] = ws
 
-    # Write data without header
     df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=1, header=False)
 
-    # Formats
     fmt_header = wb.add_format({"bold": True, "align": "center", "border": 1})
     fmt_amt = wb.add_format({"num_format": "#,##0"})
     fmt_pct = wb.add_format({"num_format": "0.00%"})
@@ -213,7 +231,6 @@ def write_formatted_sheet(writer, df, sheet_name):
     fmt_red = wb.add_format({"bg_color": "#F8CBAD", "num_format": "0.00%"})
     fmt_green = wb.add_format({"bg_color": "#C6EFCE", "num_format": "0.00%"})
 
-    # Header
     for c, col in enumerate(df.columns):
         ws.write(0, c, col, fmt_header)
         if col in PERCENT_COLS:
@@ -223,7 +240,6 @@ def write_formatted_sheet(writer, df, sheet_name):
         else:
             ws.set_column(c, c, 18, fmt_amt)
 
-    # Rewrite JUMLAH row with proper formatting
     jumlah_row = len(df)
 
     for c, col in enumerate(df.columns):
@@ -238,7 +254,6 @@ def write_formatted_sheet(writer, df, sheet_name):
         else:
             ws.write(jumlah_row, c, val, fmt_txt_bold)
 
-    # Conditional formatting for %Result (ALL rows)
     if "%Result" in df.columns:
         idx = df.columns.get_loc("%Result")
         ws.conditional_format(
@@ -277,10 +292,9 @@ if process_btn and uploaded_file:
         st.subheader(f"📋 Detail {c}")
         st.dataframe(format_display(add_total_row(results[c])), use_container_width=True)
 
-    # Export Excel
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        write_formatted_sheet(writer, summary_df, "SUMMARY")
+        write_formatted_sheet(writer, add_total_row(summary_df, is_summary=True), "SUMMARY")
         for c in COVERAGE_ORDER:
             write_formatted_sheet(writer, add_total_row(results[c]), c)
 
