@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 st.title("📊 Bulk Profitability Checker – Multi Coverage")
-st.caption("Profitability checking tool (PAR, EQVET, MB, PL, FG) by Divisi Aktuaria")
+st.caption("Profitability checking tool (PAR, EQVET, MB, PL, FG)")
 
 # =====================================================
 # USER ASSUMPTIONS
@@ -42,8 +42,16 @@ COVERAGE_ORDER = [
     "FIDELITY GUARANTEE"
 ]
 
+# =====================================================
+# DISPLAY CONFIG
+# =====================================================
 AMOUNT_COLS = [
-    "TSI_IDR", "Limit_IDR", "TopRisk_IDR", "ExposureBasis", "Exposure_Loss",
+    "Kurs",
+    "TSI Full Value original currency",
+    "Limit of Liability original currency",
+    "Top Risk original currency",
+    "TSI_IDR", "Limit_IDR", "TopRisk_IDR",
+    "ExposureBasis", "Exposure_Loss",
     "S_Askrindo", "Pool_amt", "Fac_amt", "OR_amt",
     "Prem100", "Prem_Askrindo", "Prem_POOL", "Prem_Fac", "Prem_OR",
     "Acq_amt", "Komisi_POOL", "Komisi_Fakultatif",
@@ -52,8 +60,18 @@ AMOUNT_COLS = [
 ]
 
 PERCENT_COLS = [
-    "% Askrindo Share", "% Fakultatif Share", "% Komisi Fakultatif",
-    "% LOL Premi", "%POOL", "%OR", "%Result"
+    "Rate",
+    "% Askrindo Share",
+    "% Fakultatif Share",
+    "% Komisi Fakultatif",
+    "% LOL Premi",
+    "%POOL",
+    "%OR",
+    "%Result"
+]
+
+INT_COLS = [
+    "Kode Okupasi"
 ]
 
 # =====================================================
@@ -79,6 +97,10 @@ def format_display(df):
     for col in PERCENT_COLS:
         if col in df.columns:
             format_dict[col] = "{:.2%}"
+
+    for col in INT_COLS:
+        if col in df.columns:
+            format_dict[col] = "{:.0f}"
 
     return df.style.format(format_dict)
 
@@ -179,7 +201,7 @@ if process_btn:
             st.stop()
         results[cov] = run_profitability(pd.read_excel(xls, sheet_name=cov), cov)
 
-    # Summary
+    # ================= SUMMARY =================
     rows = []
     total_prem = total_res = 0
 
@@ -200,14 +222,15 @@ if process_btn:
     st.subheader("📊 Summary Profitability")
     st.dataframe(format_display(summary_df), use_container_width=True)
 
-    # Detail
+    # ================= DETAIL =================
     for cov in COVERAGE_ORDER:
         df = results[cov]
 
         total_row = pd.DataFrame([{
             "Prem_Askrindo": df["Prem_Askrindo"].sum(),
             "Result": df["Result"].sum(),
-            "%Result": df["Result"].sum() / df["Prem_Askrindo"].sum() if df["Prem_Askrindo"].sum() != 0 else 0
+            "%Result": df["Result"].sum() / df["Prem_Askrindo"].sum()
+            if df["Prem_Askrindo"].sum() != 0 else 0
         }], index=["JUMLAH"])
 
         display_df = pd.concat([df, total_row], axis=0)
@@ -215,7 +238,7 @@ if process_btn:
         st.subheader(f"📋 Detail {cov}")
         st.dataframe(format_display(display_df), use_container_width=True)
 
-    # Download
+    # ================= DOWNLOAD =================
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         for cov in COVERAGE_ORDER:
