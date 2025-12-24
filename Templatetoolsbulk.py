@@ -12,39 +12,35 @@ st.set_page_config(
 )
 
 st.title("📊 Bulk Profitability Checker – Multi Coverage")
-st.caption("Profitability checking tool (PAR, EQVET, Machinery, PL, FG)")
+st.caption("Profitability checking tool (PAR, EQVET, MB, PL, FG)")
 
 # =====================================================
 # USER ASSUMPTIONS
 # =====================================================
 st.sidebar.header("Asumsi Profitability")
 
-loss_ratio = st.sidebar.number_input(
-    "Asumsi Loss Ratio",
-    0.0, 1.0, 0.45, 0.01
-)
-
-premi_xol = st.sidebar.number_input(
-    "Asumsi Premi XOL",
-    0.0, 1.0, 0.12, 0.01
-)
-
-expense_ratio = st.sidebar.number_input(
-    "Asumsi Expense",
-    0.0, 1.0, 0.20, 0.01
-)
+loss_ratio = st.sidebar.number_input("Asumsi Loss Ratio", 0.0, 1.0, 0.45, 0.01)
+premi_xol = st.sidebar.number_input("Asumsi Premi XOL", 0.0, 1.0, 0.12, 0.01)
+expense_ratio = st.sidebar.number_input("Asumsi Expense", 0.0, 1.0, 0.20, 0.01)
 
 # =====================================================
-# FIXED COMMISSION
+# CONSTANTS
 # =====================================================
 KOMISI_BPPDAN = 0.35
 KOMISI_MAIPARK = 0.30
 
-# RATE ACUAN NON-CAT
 RATE_MB_INDUSTRIAL = 0.0015
 RATE_MB_NON_INDUSTRIAL = 0.0001
 RATE_PL = 0.0005
 RATE_FG = 0.0010
+
+COVERAGE_ORDER = [
+    "PAR",
+    "EQVET",
+    "MACHINERY",
+    "PUBLIC LIABILITY",
+    "FIDELITY GUARANTEE"
+]
 
 # =====================================================
 # FILE UPLOAD
@@ -64,93 +60,51 @@ def run_profitability(df, coverage):
     df = df.copy()
     df.columns = [c.strip() for c in df.columns]
 
-    # -----------------------------
-    # Currency & Exposure
-    # -----------------------------
     df["TSI_IDR"] = df["TSI Full Value original currency"] * df["Kurs"]
     df["Limit_IDR"] = df["Limit of Liability original currency"] * df["Kurs"]
     df["TopRisk_IDR"] = df["Top Risk original currency"] * df["Kurs"]
 
     df["ExposureBasis"] = df[["Limit_IDR", "TopRisk_IDR"]].max(axis=1)
+    df["Exposure_Loss"] = np.where(df["Limit_IDR"] > 0, df["Limit_IDR"], df["TSI_IDR"])
 
-    # Exposure for loss (LOL if ada, else full value)
-    df["Exposure_Loss"] = np.where(
-        df["Limit_IDR"] > 0,
-        df["Limit_IDR"],
-        df["TSI_IDR"]
-    )
-
-    # -----------------------------
-    # Retention
-    # -----------------------------
     df["S_Askrindo"] = df["% Askrindo Share"] * df["ExposureBasis"]
 
-    # -----------------------------
-    # Pool Logic
-    # -----------------------------
+    # ---------------- Pool Logic ----------------
     if coverage == "PAR":
-        df["Pool_amt"] = np.minimum(
-            0.025 * df["S_Askrindo"],
-            500_000_000 * df["% Askrindo Share"]
-        )
+        df["Pool_amt"] = np.minimum(0.025 * df["S_Askrindo"], 500_000_000 * df["% Askrindo Share"])
         komisi_pool = KOMISI_BPPDAN
 
     elif coverage == "EQVET":
-        rate = np.where(
-            df["Wilayah Gempa Prioritas"] == "DKI-JABAR-BANTEN",
-            0.10,
-            0.25
-        )
-        df["Pool_amt"] = np.minimum(
-            rate * df["S_Askrindo"],
-            10_000_000_000 * df["% Askrindo Share"]
-        )
+        rate = np.where(df["Wilayah Gempa Prioritas"] == "DKI-JABAR-BANTEN", 0.10, 0.25)
+        df["Pool_amt"] = np.minimum(rate * df["S_Askrindo"], 10_000_000_000 * df["% Askrindo Share"])
         komisi_pool = KOMISI_MAIPARK
 
     else:
         df["Pool_amt"] = 0
         komisi_pool = 0
 
-    df["%POOL"] = np.where(
-        df["ExposureBasis"] > 0,
-        df["Pool_amt"] / df["ExposureBasis"],
-        0
-    )
+    df["%POOL"] = np.where(df["ExposureBasis"] > 0, df["Pool_amt"] / df["ExposureBasis"], 0)
 
-    # -----------------------------
-    # Facultative & OR
-    # -----------------------------
+    # ---------------- Facultative & OR ----------------
     df["Fac_amt"] = df["% Fakultatif Share"] * df["ExposureBasis"]
     df["OR_amt"] = df["S_Askrindo"] - df["Pool_amt"] - df["Fac_amt"]
     df["%OR"] = df["OR_amt"] / df["ExposureBasis"]
 
-    # -----------------------------
-    # Premium
-    # -----------------------------
+    # ---------------- Premium ----------------
     df["Prem100"] = df["Rate"] * df["% LOL Premi"] * df["TSI_IDR"]
     df["Prem_Askrindo"] = df["Prem100"] * df["% Askrindo Share"]
     df["Prem_POOL"] = df["Prem100"] * df["%POOL"]
     df["Prem_Fac"] = df["Prem100"] * df["% Fakultatif Share"]
     df["Prem_OR"] = df["Prem100"] * df["%OR"]
 
-    # -----------------------------
-    # Commission & Acquisition
-    # -----------------------------
+    # ---------------- Commission & Expense ----------------
     df["Acq_amt"] = df["% Akuisisi"] * df["Prem_Askrindo"]
     df["Komisi_POOL"] = komisi_pool * df["Prem_POOL"]
-    df["Komisi_Fakultatif"] = (
-        df["% Komisi Fakultatif"].fillna(0) * df["Prem_Fac"]
-    )
+    df["Komisi_Fakultatif"] = df["% Komisi Fakultatif"].fillna(0) * df["Prem_Fac"]
 
-    # -----------------------------
-    # Expected Loss
-    # -----------------------------
+    # ---------------- Expected Loss ----------------
     if coverage == "MACHINERY":
-        rate_acuan = np.where(
-            df["Occupancy"].str.lower() == "industrial",
-            RATE_MB_INDUSTRIAL,
-            RATE_MB_NON_INDUSTRIAL
-        )
+        rate_acuan = np.where(df["Occupancy"].str.lower() == "industrial", RATE_MB_INDUSTRIAL, RATE_MB_NON_INDUSTRIAL)
         df["EL_100"] = rate_acuan * df["Exposure_Loss"] * loss_ratio
 
     elif coverage == "PUBLIC LIABILITY":
@@ -166,15 +120,11 @@ def run_profitability(df, coverage):
     df["EL_POOL"] = df["EL_100"] * df["%POOL"]
     df["EL_Fac"] = df["EL_100"] * df["% Fakultatif Share"]
 
-    # -----------------------------
-    # XL & Expense
-    # -----------------------------
+    # ---------------- XL & Expense ----------------
     df["XL_cost"] = premi_xol * df["Prem_OR"]
     df["Expense"] = expense_ratio * df["Prem_Askrindo"]
 
-    # -----------------------------
-    # Result
-    # -----------------------------
+    # ---------------- Result ----------------
     df["Result"] = (
         df["Prem_Askrindo"]
         - df["Prem_POOL"]
@@ -189,8 +139,9 @@ def run_profitability(df, coverage):
         - df["Expense"]
     )
 
-    return df
+    df["%Result"] = np.where(df["Prem_Askrindo"] != 0, df["Result"] / df["Prem_Askrindo"], 0)
 
+    return df
 
 # =====================================================
 # RUN PROCESS
@@ -203,32 +154,32 @@ if process_btn:
 
     xls = pd.ExcelFile(uploaded_file)
 
-    required_sheets = {
-        "PAR", "EQVET", "MACHINERY",
-        "PUBLIC LIABILITY", "FIDELITY GUARANTEE"
-    }
-
-    if not required_sheets.issubset(set(xls.sheet_names)):
-        st.error(f"Excel wajib memiliki sheet: {required_sheets}")
-        st.stop()
-
     results = {}
 
-    for sheet in required_sheets:
-        df = pd.read_excel(xls, sheet_name=sheet)
-        results[sheet] = run_profitability(df, sheet)
+    for cov in COVERAGE_ORDER:
+        if cov not in xls.sheet_names:
+            st.error(f"Sheet {cov} tidak ditemukan di Excel.")
+            st.stop()
+        df = pd.read_excel(xls, sheet_name=cov)
+        results[cov] = run_profitability(df, cov)
 
-    def summarize(df):
+    # ---------------- SUMMARY ----------------
+    summary_rows = []
+
+    total_prem = total_res = 0
+
+    for cov in COVERAGE_ORDER:
+        df = results[cov]
         prem = df["Prem_Askrindo"].sum()
         res = df["Result"].sum()
         pct = res / prem if prem != 0 else 0
-        return prem, res, pct
 
-    summary_rows = []
+        total_prem += prem
+        total_res += res
 
-    for cov, df in results.items():
-        prem, res, pct = summarize(df)
         summary_rows.append([cov, prem, res, pct])
+
+    summary_rows.append(["JUMLAH", total_prem, total_res, total_res / total_prem if total_prem != 0 else 0])
 
     summary_df = pd.DataFrame(
         summary_rows,
@@ -245,17 +196,29 @@ if process_btn:
         use_container_width=True
     )
 
-    for cov, df in results.items():
-        st.subheader(f"📋 Detail {cov}")
-        st.dataframe(df, use_container_width=True)
+    # ---------------- DETAIL TABLES ----------------
+    for cov in COVERAGE_ORDER:
+        df = results[cov]
 
-    # -----------------------------
-    # Download Output
-    # -----------------------------
+        total_row = pd.DataFrame([{
+            "Prem_Askrindo": df["Prem_Askrindo"].sum(),
+            "Result": df["Result"].sum(),
+            "%Result": df["Result"].sum() / df["Prem_Askrindo"].sum() if df["Prem_Askrindo"].sum() != 0 else 0
+        }])
+
+        total_row.index = ["JUMLAH"]
+
+        st.subheader(f"📋 Detail {cov}")
+        st.dataframe(
+            pd.concat([df, total_row], axis=0),
+            use_container_width=True
+        )
+
+    # ---------------- DOWNLOAD ----------------
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        for cov, df in results.items():
-            df.to_excel(writer, index=False, sheet_name=cov)
+        for cov in COVERAGE_ORDER:
+            results[cov].to_excel(writer, index=False, sheet_name=cov)
 
     st.download_button(
         "📥 Download Excel Output",
