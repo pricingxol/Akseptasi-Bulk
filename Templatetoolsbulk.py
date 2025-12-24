@@ -60,6 +60,7 @@ def run_profitability(df, coverage):
     df = df.copy()
     df.columns = [c.strip() for c in df.columns]
 
+    # Currency & exposure
     df["TSI_IDR"] = df["TSI Full Value original currency"] * df["Kurs"]
     df["Limit_IDR"] = df["Limit of Liability original currency"] * df["Kurs"]
     df["TopRisk_IDR"] = df["Top Risk original currency"] * df["Kurs"]
@@ -67,44 +68,63 @@ def run_profitability(df, coverage):
     df["ExposureBasis"] = df[["Limit_IDR", "TopRisk_IDR"]].max(axis=1)
     df["Exposure_Loss"] = np.where(df["Limit_IDR"] > 0, df["Limit_IDR"], df["TSI_IDR"])
 
+    # Retention
     df["S_Askrindo"] = df["% Askrindo Share"] * df["ExposureBasis"]
 
-    # ---------------- Pool Logic ----------------
+    # Pool logic
     if coverage == "PAR":
-        df["Pool_amt"] = np.minimum(0.025 * df["S_Askrindo"], 500_000_000 * df["% Askrindo Share"])
+        df["Pool_amt"] = np.minimum(
+            0.025 * df["S_Askrindo"],
+            500_000_000 * df["% Askrindo Share"]
+        )
         komisi_pool = KOMISI_BPPDAN
 
     elif coverage == "EQVET":
-        rate = np.where(df["Wilayah Gempa Prioritas"] == "DKI-JABAR-BANTEN", 0.10, 0.25)
-        df["Pool_amt"] = np.minimum(rate * df["S_Askrindo"], 10_000_000_000 * df["% Askrindo Share"])
+        rate = np.where(
+            df["Wilayah Gempa Prioritas"] == "DKI-JABAR-BANTEN",
+            0.10,
+            0.25
+        )
+        df["Pool_amt"] = np.minimum(
+            rate * df["S_Askrindo"],
+            10_000_000_000 * df["% Askrindo Share"]
+        )
         komisi_pool = KOMISI_MAIPARK
 
     else:
         df["Pool_amt"] = 0
         komisi_pool = 0
 
-    df["%POOL"] = np.where(df["ExposureBasis"] > 0, df["Pool_amt"] / df["ExposureBasis"], 0)
+    df["%POOL"] = np.where(
+        df["ExposureBasis"] > 0,
+        df["Pool_amt"] / df["ExposureBasis"],
+        0
+    )
 
-    # ---------------- Facultative & OR ----------------
+    # Facultative & OR
     df["Fac_amt"] = df["% Fakultatif Share"] * df["ExposureBasis"]
     df["OR_amt"] = df["S_Askrindo"] - df["Pool_amt"] - df["Fac_amt"]
     df["%OR"] = df["OR_amt"] / df["ExposureBasis"]
 
-    # ---------------- Premium ----------------
+    # Premium
     df["Prem100"] = df["Rate"] * df["% LOL Premi"] * df["TSI_IDR"]
     df["Prem_Askrindo"] = df["Prem100"] * df["% Askrindo Share"]
     df["Prem_POOL"] = df["Prem100"] * df["%POOL"]
     df["Prem_Fac"] = df["Prem100"] * df["% Fakultatif Share"]
     df["Prem_OR"] = df["Prem100"] * df["%OR"]
 
-    # ---------------- Commission & Expense ----------------
+    # Commission & acquisition
     df["Acq_amt"] = df["% Akuisisi"] * df["Prem_Askrindo"]
     df["Komisi_POOL"] = komisi_pool * df["Prem_POOL"]
     df["Komisi_Fakultatif"] = df["% Komisi Fakultatif"].fillna(0) * df["Prem_Fac"]
 
-    # ---------------- Expected Loss ----------------
+    # Expected loss
     if coverage == "MACHINERY":
-        rate_acuan = np.where(df["Occupancy"].str.lower() == "industrial", RATE_MB_INDUSTRIAL, RATE_MB_NON_INDUSTRIAL)
+        rate_acuan = np.where(
+            df["Occupancy"].str.lower() == "industrial",
+            RATE_MB_INDUSTRIAL,
+            RATE_MB_NON_INDUSTRIAL
+        )
         df["EL_100"] = rate_acuan * df["Exposure_Loss"] * loss_ratio
 
     elif coverage == "PUBLIC LIABILITY":
@@ -120,11 +140,11 @@ def run_profitability(df, coverage):
     df["EL_POOL"] = df["EL_100"] * df["%POOL"]
     df["EL_Fac"] = df["EL_100"] * df["% Fakultatif Share"]
 
-    # ---------------- XL & Expense ----------------
+    # XL & expense
     df["XL_cost"] = premi_xol * df["Prem_OR"]
     df["Expense"] = expense_ratio * df["Prem_Askrindo"]
 
-    # ---------------- Result ----------------
+    # Result
     df["Result"] = (
         df["Prem_Askrindo"]
         - df["Prem_POOL"]
@@ -139,7 +159,11 @@ def run_profitability(df, coverage):
         - df["Expense"]
     )
 
-    df["%Result"] = np.where(df["Prem_Askrindo"] != 0, df["Result"] / df["Prem_Askrindo"], 0)
+    df["%Result"] = np.where(
+        df["Prem_Askrindo"] != 0,
+        df["Result"] / df["Prem_Askrindo"],
+        0
+    )
 
     return df
 
@@ -153,7 +177,6 @@ if process_btn:
         st.stop()
 
     xls = pd.ExcelFile(uploaded_file)
-
     results = {}
 
     for cov in COVERAGE_ORDER:
@@ -163,9 +186,8 @@ if process_btn:
         df = pd.read_excel(xls, sheet_name=cov)
         results[cov] = run_profitability(df, cov)
 
-    # ---------------- SUMMARY ----------------
+    # ========================= SUMMARY =========================
     summary_rows = []
-
     total_prem = total_res = 0
 
     for cov in COVERAGE_ORDER:
@@ -179,7 +201,9 @@ if process_btn:
 
         summary_rows.append([cov, prem, res, pct])
 
-    summary_rows.append(["JUMLAH", total_prem, total_res, total_res / total_prem if total_prem != 0 else 0])
+    summary_rows.append(
+        ["JUMLAH", total_prem, total_res, total_res / total_prem if total_prem != 0 else 0]
+    )
 
     summary_df = pd.DataFrame(
         summary_rows,
@@ -196,25 +220,28 @@ if process_btn:
         use_container_width=True
     )
 
-    # ---------------- DETAIL TABLES ----------------
+    # ========================= DETAILS =========================
     for cov in COVERAGE_ORDER:
         df = results[cov]
 
         total_row = pd.DataFrame([{
             "Prem_Askrindo": df["Prem_Askrindo"].sum(),
             "Result": df["Result"].sum(),
-            "%Result": df["Result"].sum() / df["Prem_Askrindo"].sum() if df["Prem_Askrindo"].sum() != 0 else 0
-        }])
+            "%Result": df["Result"].sum() / df["Prem_Askrindo"].sum()
+            if df["Prem_Askrindo"].sum() != 0 else 0
+        }], index=["JUMLAH"])
 
-        total_row.index = ["JUMLAH"]
+        display_df = pd.concat([df, total_row], axis=0)
 
         st.subheader(f"📋 Detail {cov}")
         st.dataframe(
-            pd.concat([df, total_row], axis=0),
+            display_df.style.format({
+                "%Result": "{:.2%}"
+            }),
             use_container_width=True
         )
 
-    # ---------------- DOWNLOAD ----------------
+    # ========================= DOWNLOAD =========================
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         for cov in COVERAGE_ORDER:
