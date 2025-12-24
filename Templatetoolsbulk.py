@@ -43,7 +43,7 @@ COVERAGE_ORDER = [
 ]
 
 # =====================================================
-# DISPLAY CONFIG
+# DISPLAY CONFIG (STREAMLIT)
 # =====================================================
 AMOUNT_COLS = [
     "Kurs",
@@ -70,9 +70,7 @@ PERCENT_COLS = [
     "%Result"
 ]
 
-INT_COLS = [
-    "Kode Okupasi"
-]
+INT_COLS = ["Kode Okupasi"]
 
 # =====================================================
 # FILE UPLOAD
@@ -85,24 +83,20 @@ uploaded_file = st.file_uploader(
 process_btn = st.button("🚀 Proses Profitability")
 
 # =====================================================
-# DISPLAY FORMATTER
+# DISPLAY FORMATTER (STREAMLIT)
 # =====================================================
 def format_display(df):
-    format_dict = {}
-
-    for col in AMOUNT_COLS:
-        if col in df.columns:
-            format_dict[col] = "{:,.0f}"
-
-    for col in PERCENT_COLS:
-        if col in df.columns:
-            format_dict[col] = "{:.2%}"
-
-    for col in INT_COLS:
-        if col in df.columns:
-            format_dict[col] = "{:.0f}"
-
-    return df.style.format(format_dict)
+    fmt = {}
+    for c in AMOUNT_COLS:
+        if c in df.columns:
+            fmt[c] = "{:,.0f}"
+    for c in PERCENT_COLS:
+        if c in df.columns:
+            fmt[c] = "{:.2%}"
+    for c in INT_COLS:
+        if c in df.columns:
+            fmt[c] = "{:.0f}"
+    return df.style.format(fmt)
 
 # =====================================================
 # CORE ENGINE
@@ -184,65 +178,89 @@ def run_profitability(df, coverage):
     return df
 
 # =====================================================
-# RUN PROCESS
+# EXCEL HELPERS
+# =====================================================
+def add_total_row(df):
+    total = {}
+    for col in df.columns:
+        if col in AMOUNT_COLS:
+            total[col] = df[col].sum()
+        elif col == "%Result":
+            total[col] = df["Result"].sum() / df["Prem_Askrindo"].sum() if df["Prem_Askrindo"].sum() != 0 else 0
+        else:
+            total[col] = ""
+    return pd.concat([df, pd.DataFrame([total], index=["JUMLAH"])])
+
+
+def write_formatted_sheet(writer, df, sheet_name):
+    wb = writer.book
+    ws = wb.add_worksheet(sheet_name)
+    writer.sheets[sheet_name] = ws
+
+    df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=1)
+
+    fmt_header = wb.add_format({"bold": True, "align": "center", "border": 1})
+    fmt_amt = wb.add_format({"num_format": "#,##0"})
+    fmt_pct = wb.add_format({"num_format": "0.00%"})
+    fmt_int = wb.add_format({"num_format": "0"})
+
+    fmt_red = wb.add_format({"bg_color": "#F8CBAD", "num_format": "0.00%"})
+    fmt_green = wb.add_format({"bg_color": "#C6EFCE", "num_format": "0.00%"})
+
+    for c, col in enumerate(df.columns):
+        ws.write(0, c, col, fmt_header)
+        if col in AMOUNT_COLS:
+            ws.set_column(c, c, 18, fmt_amt)
+        elif col in PERCENT_COLS:
+            ws.set_column(c, c, 14, fmt_pct)
+        elif col in INT_COLS:
+            ws.set_column(c, c, 12, fmt_int)
+        else:
+            ws.set_column(c, c, 20)
+
+    ws.freeze_panes(1, 0)
+
+    if "%Result" in df.columns:
+        col = df.columns.get_loc("%Result")
+        ws.conditional_format(1, col, len(df), col, {
+            "type": "cell", "criteria": "<", "value": 0.05, "format": fmt_red
+        })
+        ws.conditional_format(1, col, len(df), col, {
+            "type": "cell", "criteria": ">=", "value": 0.05, "format": fmt_green
+        })
+
+# =====================================================
+# RUN
 # =====================================================
 if process_btn:
 
-    if uploaded_file is None:
-        st.error("Upload file Excel terlebih dahulu.")
-        st.stop()
-
     xls = pd.ExcelFile(uploaded_file)
-    results = {}
+    results = {c: run_profitability(pd.read_excel(xls, c), c) for c in COVERAGE_ORDER}
 
-    for cov in COVERAGE_ORDER:
-        if cov not in xls.sheet_names:
-            st.error(f"Sheet {cov} tidak ditemukan.")
-            st.stop()
-        results[cov] = run_profitability(pd.read_excel(xls, sheet_name=cov), cov)
+    summary_rows = []
+    tp = tr = 0
+    for c in COVERAGE_ORDER:
+        p = results[c]["Prem_Askrindo"].sum()
+        r = results[c]["Result"].sum()
+        summary_rows.append([c, p, r, r / p if p else 0])
+        tp += p; tr += r
 
-    # ================= SUMMARY =================
-    rows = []
-    total_prem = total_res = 0
-
-    for cov in COVERAGE_ORDER:
-        df = results[cov]
-        prem = df["Prem_Askrindo"].sum()
-        res = df["Result"].sum()
-        pct = res / prem if prem != 0 else 0
-
-        total_prem += prem
-        total_res += res
-        rows.append([cov, prem, res, pct])
-
-    rows.append(["JUMLAH", total_prem, total_res, total_res / total_prem if total_prem != 0 else 0])
-
-    summary_df = pd.DataFrame(rows, columns=["Coverage", "Jumlah Premi Ourshare", "Result", "%Result"])
+    summary_rows.append(["JUMLAH", tp, tr, tr / tp if tp else 0])
+    summary_df = pd.DataFrame(summary_rows, columns=["Coverage", "Jumlah Premi Ourshare", "Result", "%Result"])
 
     st.subheader("📊 Summary Profitability")
     st.dataframe(format_display(summary_df), use_container_width=True)
 
-    # ================= DETAIL =================
-    for cov in COVERAGE_ORDER:
-        df = results[cov]
+    for c in COVERAGE_ORDER:
+        dfc = add_total_row(results[c])
+        st.subheader(f"📋 Detail {c}")
+        st.dataframe(format_display(dfc), use_container_width=True)
 
-        total_row = pd.DataFrame([{
-            "Prem_Askrindo": df["Prem_Askrindo"].sum(),
-            "Result": df["Result"].sum(),
-            "%Result": df["Result"].sum() / df["Prem_Askrindo"].sum()
-            if df["Prem_Askrindo"].sum() != 0 else 0
-        }], index=["JUMLAH"])
-
-        display_df = pd.concat([df, total_row], axis=0)
-
-        st.subheader(f"📋 Detail {cov}")
-        st.dataframe(format_display(display_df), use_container_width=True)
-
-    # ================= DOWNLOAD =================
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        for cov in COVERAGE_ORDER:
-            results[cov].to_excel(writer, index=False, sheet_name=cov)
+        write_formatted_sheet(writer, summary_df, "SUMMARY")
+        for c in COVERAGE_ORDER:
+            write_formatted_sheet(writer, add_total_row(results[c]), c)
 
     st.download_button(
         "📥 Download Excel Output",
