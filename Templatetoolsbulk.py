@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 st.title("📊 Bulk Profitability Checker – Multi Coverage")
-st.caption("Profitability checking tool (PAR, EQVET, MB, PL, FG)")
+st.caption("Profitability checking tool (PAR, EQVET, MB, PL, FG) by Divisi Aktuaria Askrindo")
 
 # =====================================================
 # USER ASSUMPTIONS
