@@ -12,7 +12,7 @@ st.set_page_config(
 )
 
 st.title("📊 Bulk Profitability Checker – Multi Coverage")
-st.caption("Profitability checking tool (PAR, EQVET, MB, PL, FG) by Divisi Aktuaria Askrindo")
+st.caption("Profitability checking tool (PAR, EQVET, MB, PL, FG)")
 
 # =====================================================
 # USER ASSUMPTIONS
@@ -88,10 +88,11 @@ def run_profitability(df, coverage):
     df["ExposureBasis"] = df[["Limit_IDR", "TopRisk_IDR"]].max(axis=1)
     df["Exposure_OR"] = np.minimum(df["ExposureBasis"], OR_CAP[coverage])
 
-    # ===== Spreading =====
+    # ===== Spreading Base =====
     df["S_Askrindo"] = df["% Askrindo Share"] * df["Exposure_OR"]
 
     if coverage == "PAR":
+        # BPPDAN cap 500 juta
         df["Pool_amt"] = np.minimum(
             0.025 * df["S_Askrindo"],
             500_000_000 * df["% Askrindo Share"]
@@ -99,13 +100,14 @@ def run_profitability(df, coverage):
         komisi_pool = KOMISI_BPPDAN
 
     elif coverage == "EQVET":
+        # MAIPARK cap 100 miliar (FIX)
         rate = np.where(
             df["Wilayah Gempa Prioritas"] == "DKI-JABAR-BANTEN",
             0.10, 0.25
         )
         df["Pool_amt"] = np.minimum(
             rate * df["S_Askrindo"],
-            10_000_000_000 * df["% Askrindo Share"]
+            100_000_000_000 * df["% Askrindo Share"]
         )
         komisi_pool = KOMISI_MAIPARK
 
