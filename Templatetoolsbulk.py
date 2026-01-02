@@ -136,7 +136,7 @@ def run_profitability(df, coverage):
     )
 
     # =============================
-    # SHORTFALL (BERBASIS SHARE ASKRINDO)
+    # SHORTFALL
     # =============================
     df["Shortfall_amt"] = np.maximum(
         df["S_Askrindo"] - (df["Pool_amt"] + df["Fac_amt"] + df["OR_amt"]),
@@ -144,7 +144,7 @@ def run_profitability(df, coverage):
     )
 
     # =============================
-    # % SPREADING (EXPOSURE BASIS)
+    # % SPREADING (Exposure Basis)
     # =============================
     df["%POOL"] = np.where(df["ExposureBasis"] > 0, df["Pool_amt"] / df["ExposureBasis"], 0)
     df["%OR"] = np.where(df["ExposureBasis"] > 0, df["OR_amt"] / df["ExposureBasis"], 0)
@@ -168,34 +168,31 @@ def run_profitability(df, coverage):
     df["Komisi_POOL"] = komisi_pool * df["Prem_POOL"]
     df["Komisi_Fakultatif"] = df["% Komisi Fakultatif"].fillna(0) * df["Prem_Fac"]
 
-# =============================
-# LOSS (FINAL - CORRECT)
-# =============================
-
-# Basis untuk EL non-PAR/EQVET
-df["EL_BASIS"] = np.where(
-    df["% LOL Premi"].notna(),
-    df["TSI_IDR"] * df["% LOL Premi"],
-    df["TSI_IDR"]
-)
-
-if coverage in ["PAR", "EQVET"]:
-    # EL berbasis premi
-    df["EL_100"] = loss_ratio * df["Prem100"]
-
-elif coverage == "MACHINERY":
-    rate_min = np.where(
-        df["Occupancy"].str.lower() == "industrial",
-        RATE_MB_INDUSTRIAL,
-        RATE_MB_NON_INDUSTRIAL
+    # =============================
+    # LOSS (FINAL & CORRECT)
+    # =============================
+    df["EL_BASIS"] = np.where(
+        df["% LOL Premi"].notna(),
+        df["TSI_IDR"] * df["% LOL Premi"],
+        df["TSI_IDR"]
     )
-    df["EL_100"] = rate_min * loss_ratio * df["EL_BASIS"]
 
-elif coverage == "PUBLIC LIABILITY":
-    df["EL_100"] = RATE_PL * loss_ratio * df["EL_BASIS"]
+    if coverage in ["PAR", "EQVET"]:
+        df["EL_100"] = loss_ratio * df["Prem100"]
 
-elif coverage == "FIDELITY GUARANTEE":
-    df["EL_100"] = RATE_FG * loss_ratio * df["EL_BASIS"]
+    elif coverage == "MACHINERY":
+        rate_min = np.where(
+            df["Occupancy"].str.lower() == "industrial",
+            RATE_MB_INDUSTRIAL,
+            RATE_MB_NON_INDUSTRIAL
+        )
+        df["EL_100"] = rate_min * loss_ratio * df["EL_BASIS"]
+
+    elif coverage == "PUBLIC LIABILITY":
+        df["EL_100"] = RATE_PL * loss_ratio * df["EL_BASIS"]
+
+    elif coverage == "FIDELITY GUARANTEE":
+        df["EL_100"] = RATE_FG * loss_ratio * df["EL_BASIS"]
 
     df["EL_Askrindo"] = df["% Askrindo Share"] * df["EL_100"]
     df["EL_POOL"] = df["%POOL"] * df["EL_100"]
@@ -233,25 +230,19 @@ elif coverage == "FIDELITY GUARANTEE":
     return df
 
 # =====================================================
-# TOTAL ROW (PER COB)
+# TOTAL ROW
 # =====================================================
 def add_total_row(df):
     total = {}
     for c in df.columns:
-        if c in ["%Result"]:
-            continue
         if pd.api.types.is_numeric_dtype(df[c]):
             total[c] = df[c].sum()
         else:
             total[c] = ""
-
-    total["Result"] = df["Result"].sum()
-    total["Prem_Askrindo"] = df["Prem_Askrindo"].sum()
     total["%Result"] = (
         total["Result"] / total["Prem_Askrindo"]
         if total["Prem_Askrindo"] != 0 else 0
     )
-
     total_df = pd.DataFrame([total], index=["JUMLAH"])
     return pd.concat([df, total_df])
 
@@ -262,7 +253,6 @@ uploaded_file = st.file_uploader("📁 Upload Excel", type=["xlsx"])
 process_btn = st.button("🚀 Proses Profitability")
 
 if process_btn and uploaded_file:
-
     xls = pd.ExcelFile(uploaded_file)
 
     for cov in COVERAGE_ORDER:
@@ -273,9 +263,6 @@ if process_btn and uploaded_file:
         st.subheader(f"📋 Detail {cov}")
 
         if df_res["Shortfall_amt"].sum() > 0:
-            st.warning(
-                f"⚠️ Shortfall detected | {cov} | "
-                f"{(df_res['Shortfall_amt'] > 0).sum()} policy"
-            )
+            st.warning(f"⚠️ Shortfall detected | {cov}")
 
         st.dataframe(format_display(df_res), use_container_width=True)
