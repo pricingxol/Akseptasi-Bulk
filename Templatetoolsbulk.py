@@ -254,13 +254,13 @@ def add_total_row(df):
 
     for c in df.columns:
         if c in EXCLUDE_TOTAL_COLS:
-            total[c] = ""
+            total[c] = np.nan   # ⬅️ PENTING: BUKAN ""
         elif c == "%Result":
             continue
         elif pd.api.types.is_numeric_dtype(df[c]):
             total[c] = df[c].sum()
         else:
-            total[c] = ""
+            total[c] = np.nan
 
     # Hitung %Result TOTAL secara benar
     total["%Result"] = (
@@ -270,6 +270,7 @@ def add_total_row(df):
 
     total_df = pd.DataFrame([total], index=["JUMLAH"])
     return pd.concat([df, total_df])
+
 
 
 # =====================================================
