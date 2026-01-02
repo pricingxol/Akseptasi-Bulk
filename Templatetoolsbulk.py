@@ -88,11 +88,10 @@ def run_profitability(df, coverage):
     df["ExposureBasis"] = df[["Limit_IDR", "TopRisk_IDR"]].max(axis=1)
     df["Exposure_OR"] = np.minimum(df["ExposureBasis"], OR_CAP[coverage])
 
-    # ===== Spreading Base =====
+    # ===== Spreading =====
     df["S_Askrindo"] = df["% Askrindo Share"] * df["Exposure_OR"]
 
     if coverage == "PAR":
-        # BPPDAN cap 500 juta
         df["Pool_amt"] = np.minimum(
             0.025 * df["S_Askrindo"],
             500_000_000 * df["% Askrindo Share"]
@@ -100,7 +99,6 @@ def run_profitability(df, coverage):
         komisi_pool = KOMISI_BPPDAN
 
     elif coverage == "EQVET":
-        # MAIPARK cap 100 miliar (FIX)
         rate = np.where(
             df["Wilayah Gempa Prioritas"] == "DKI-JABAR-BANTEN",
             0.10, 0.25
