@@ -233,18 +233,44 @@ def run_profitability(df, coverage):
 # TOTAL ROW
 # =====================================================
 def add_total_row(df):
+
+    EXCLUDE_TOTAL_COLS = [
+        "Kode Okupasi",
+        "Kurs",
+        "TSI Full Value original currency",
+        "Limit of Liability original currency",
+        "Top Risk original currency",
+        "% Askrindo Share",
+        "% Fakultatif Share",
+        "% Komisi Fakultatif",
+        "Rate",
+        "% LOL Premi",
+        "%POOL",
+        "%OR",
+        "%Shortfall"
+    ]
+
     total = {}
+
     for c in df.columns:
-        if pd.api.types.is_numeric_dtype(df[c]):
+        if c in EXCLUDE_TOTAL_COLS:
+            total[c] = ""
+        elif c == "%Result":
+            continue
+        elif pd.api.types.is_numeric_dtype(df[c]):
             total[c] = df[c].sum()
         else:
             total[c] = ""
+
+    # Hitung %Result TOTAL secara benar
     total["%Result"] = (
         total["Result"] / total["Prem_Askrindo"]
-        if total["Prem_Askrindo"] != 0 else 0
+        if total.get("Prem_Askrindo", 0) != 0 else 0
     )
+
     total_df = pd.DataFrame([total], index=["JUMLAH"])
     return pd.concat([df, total_df])
+
 
 # =====================================================
 # RUN APP
