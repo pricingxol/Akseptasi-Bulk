@@ -19,9 +19,33 @@ st.caption("Profitability checking tool (PAR, EQVET, MB, PL, FG)")
 # =====================================================
 st.sidebar.header("Asumsi Profitability")
 
-loss_ratio = st.sidebar.number_input("Asumsi Loss Ratio", 0.0, 1.0, 0.45, 0.01)
-premi_xol = st.sidebar.number_input("Asumsi Premi XOL", 0.0, 1.0, 0.12, 0.01)
-expense_ratio = st.sidebar.number_input("Asumsi Expense", 0.0, 1.0, 0.20, 0.01)
+loss_ratio = st.sidebar.number_input(
+    "Asumsi Loss Ratio", 
+    min_value=0.0, 
+    max_value=1.0, 
+    value=0.4500, 
+    step=0.0001,
+    format="%.4f"
+)
+
+premi_xol = st.sidebar.number_input(
+    "Asumsi Premi XOL", 
+    min_value=0.0, 
+    max_value=1.0, 
+    value=0.1200, 
+    step=0.0001,
+    format="%.4f"
+)
+
+expense_ratio = st.sidebar.number_input(
+    "Asumsi Expense", 
+    min_value=0.0, 
+    max_value=1.0, 
+    value=0.2000, 
+    step=0.0001,
+    format="%.4f"
+)
+
 
 # =====================================================
 # CONSTANTS
