@@ -145,7 +145,7 @@ def run_profitability(df, coverage):
 
     # ===== SHORTFALL =====
     df["Shortfall_amt"] = np.maximum(
-        df["Exposure_OR"] - (df["Pool_amt"] - df["Fac_amt"] - df["OR_amt"]),
+        df["Exposure_OR"] - (df["Pool_amt"] + df["Fac_amt"] + df["OR_amt"]),
         0
     )
 
