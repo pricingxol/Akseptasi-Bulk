@@ -168,25 +168,34 @@ def run_profitability(df, coverage):
     df["Komisi_POOL"] = komisi_pool * df["Prem_POOL"]
     df["Komisi_Fakultatif"] = df["% Komisi Fakultatif"].fillna(0) * df["Prem_Fac"]
 
-    # =============================
-    # LOSS
-    # =============================
-    if coverage == "MACHINERY":
-        rate_acuan = np.where(
-            df["Occupancy"].str.lower() == "industrial",
-            RATE_MB_INDUSTRIAL,
-            RATE_MB_NON_INDUSTRIAL
-        )
-        df["EL_100"] = rate_acuan * df["ExposureBasis"] * loss_ratio
+# =============================
+# LOSS (FINAL - CORRECT)
+# =============================
 
-    elif coverage == "PUBLIC LIABILITY":
-        df["EL_100"] = RATE_PL * df["ExposureBasis"] * loss_ratio
+# Basis untuk EL non-PAR/EQVET
+df["EL_BASIS"] = np.where(
+    df["% LOL Premi"].notna(),
+    df["TSI_IDR"] * df["% LOL Premi"],
+    df["TSI_IDR"]
+)
 
-    elif coverage == "FIDELITY GUARANTEE":
-        df["EL_100"] = RATE_FG * df["ExposureBasis"] * loss_ratio
+if coverage in ["PAR", "EQVET"]:
+    # EL berbasis premi
+    df["EL_100"] = loss_ratio * df["Prem100"]
 
-    else:
-        df["EL_100"] = loss_ratio * df["Prem100"]
+elif coverage == "MACHINERY":
+    rate_min = np.where(
+        df["Occupancy"].str.lower() == "industrial",
+        RATE_MB_INDUSTRIAL,
+        RATE_MB_NON_INDUSTRIAL
+    )
+    df["EL_100"] = rate_min * loss_ratio * df["EL_BASIS"]
+
+elif coverage == "PUBLIC LIABILITY":
+    df["EL_100"] = RATE_PL * loss_ratio * df["EL_BASIS"]
+
+elif coverage == "FIDELITY GUARANTEE":
+    df["EL_100"] = RATE_FG * loss_ratio * df["EL_BASIS"]
 
     df["EL_Askrindo"] = df["% Askrindo Share"] * df["EL_100"]
     df["EL_POOL"] = df["%POOL"] * df["EL_100"]
